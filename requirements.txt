@@ -1,0 +1,8 @@
+torch==2.1.2
+numpy==1.26.2
+pandas==1.5.3
+catboost==1.2.2
+matplotlib==3.8.2
+scipy==1.11.4
+openpyxl==3.1.2
+requests
