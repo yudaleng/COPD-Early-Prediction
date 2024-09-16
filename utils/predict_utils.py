@@ -186,7 +186,7 @@ def load_spiro_encoder(device_str, model_path):
         n_classes=2,
         device=device,
         verbose=False
-    )
+    ).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     return model
 
