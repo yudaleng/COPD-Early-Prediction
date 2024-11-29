@@ -1,17 +1,28 @@
 import base64
 import io
 import json
+
 import numpy as np
 import pandas as pd
 import torch
 from catboost import CatBoostClassifier
 from matplotlib import pyplot as plt
+from matplotlib import rcParams
 from matplotlib.cm import ScalarMappable
 from scipy.ndimage import gaussian_filter1d
 from torch.utils.data import DataLoader
 
 from model.DeepSpiro import DeepSpiro, MyDataset
 
+config = {
+    "font.family": 'Times New Roman',
+    "axes.unicode_minus": False,
+    "font.size": 18,
+    "axes.labelsize": 30,
+    "xtick.labelsize": 25,
+    "ytick.labelsize": 25,
+}
+rcParams.update(config)
 SPIRO_RECORD_SERIES_KEY = 'flow'
 
 
@@ -68,46 +79,49 @@ def compute_fef(flow: np.ndarray, volume: np.ndarray, volume_max: float):
     return fef25, fef50, fef75, fef25_75
 
 
-def calculate_index(row, column_name, value, is_pef=False):
-    if is_pef:
-        segment = row['series']
-    else:
-        segment = row[column_name]
-    absolute_differences = np.abs(segment - value)
-    closest_index = np.argmin(absolute_differences)
-    return closest_index
+def calculate_index(row):
+    flow = row['flow_volume']
+    last_index = np.argmin(flow[5:])
+    PEF_index = len(flow) - 1 - np.argmax(flow[::-1])
+    flow_index = len(flow[:last_index + 1])
+    index_25 = int(0.25 * flow_index)
+    index_50 = int(0.50 * flow_index)
+    index_75 = int(0.75 * flow_index)
+
+    return PEF_index, index_25, index_50, index_75, last_index
 
 
 def calculate_acceleration(row):
     if 'flow_volume' in row and isinstance(row['flow_volume'], np.ndarray):
-        derivatives = np.diff(row['flow_volume']) / 0.01
-
+        flow_volume = row['flow_volume']
         try:
             index_pef = int(row['index_pef'])
             start_index_25 = int(row['index_fef25'])
             end_index_50 = int(row['index_fef50'])
             end_index_75 = int(row['index_fef75'])
+            last_index = int(row['last_index'])
+            if not (index_pef < start_index_25 < end_index_50 < end_index_75):
+                return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
         except ValueError:
-            return np.nan, np.nan, np.nan
+            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
-        acceleration_pef_25 = np.nan
-        acceleration_25_50 = np.nan
-        acceleration_50_75 = np.nan
-        acceleration_75 = np.nan
+        def calc_area_under_curve(flow_volume, start_index, end_index):
+            slope = (flow_volume[end_index] - flow_volume[start_index]) / (end_index - start_index)
+            intercept = flow_volume[start_index] - slope * start_index
+            baseline = slope * np.arange(start_index, end_index + 1) + intercept
+            differences = -(flow_volume[start_index:end_index + 1] - baseline)
+            area_below = np.sum(differences[differences < 0]) * 0.01
+            area_above = np.sum(differences[differences > 0]) * 0.01
+            adjusted_area = area_below + area_above
+            return adjusted_area
 
-        if index_pef < len(derivatives) and len(derivatives) > start_index_25 >= index_pef:
-            acceleration_pef_25 = derivatives[index_pef:start_index_25 + 1].mean()
-
-        if start_index_25 < len(derivatives) and len(derivatives) > end_index_50 >= start_index_25:
-            acceleration_25_50 = derivatives[start_index_25:end_index_50 + 1].mean()
-
-        if end_index_50 < len(derivatives) and len(derivatives) > end_index_75 >= end_index_50:
-            acceleration_50_75 = derivatives[end_index_50:end_index_75 + 1].mean()
-
-        if len(derivatives) > end_index_75:
-            acceleration_75 = derivatives[end_index_75:].mean()
-
-        return acceleration_pef_25, acceleration_25_50, acceleration_50_75, acceleration_75
+        area_pef_25 = calc_area_under_curve(flow_volume, index_pef, start_index_25)
+        area_25_50 = calc_area_under_curve(flow_volume, start_index_25, end_index_50)
+        area_50_75 = calc_area_under_curve(flow_volume, end_index_50, end_index_75)
+        area_75 = calc_area_under_curve(flow_volume, end_index_75, last_index - 1)
+        area_pef_75 = calc_area_under_curve(flow_volume, start_index_25, last_index - 1)
+        area_p = area_pef_25 + area_25_50 - area_50_75 - area_75
+        return area_pef_25, area_25_50, area_50_75, area_75, area_pef_75, area_p
 
 
 def process_data(row):
@@ -132,19 +146,22 @@ def process_data(row):
 
 
 def process_acceleration(row):
-    row['index_pef'] = calculate_index(row, 'series', row['PEF'], is_pef=True)
-    row['index_fef25'] = calculate_index(row, 'flow_volume', row['blow_fef25'])
-    row['index_fef50'] = calculate_index(row, 'flow_volume', row['blow_fef50'])
-    row['index_fef75'] = calculate_index(row, 'flow_volume', row['blow_fef75'])
-    acceleration_pef_25, acceleration_25_50, acceleration_50_75, acceleration_75 = calculate_acceleration(row)
+    row['index_pef'], row['index_fef25'], row['index_fef50'], row['index_fef75'], row['last_index'] = calculate_index(
+        row)
+    acceleration_pef_25, acceleration_25_50, acceleration_50_75, acceleration_75, acceleration_pef_75, acceleration_total = calculate_acceleration(
+        row)
     acceleration_pef_25 = pd.Series(acceleration_pef_25)
     acceleration_25_50 = pd.Series(acceleration_25_50)
     acceleration_50_75 = pd.Series(acceleration_50_75)
     acceleration_75 = pd.Series(acceleration_75)
+    acceleration_pef_75 = pd.Series(acceleration_pef_75)
+    acceleration_total = pd.Series(acceleration_total)
     row['PEF_FEF25'] = acceleration_pef_25
     row['FEF25_FEF50'] = acceleration_25_50
     row['FEF50_FEF75'] = acceleration_50_75
     row['FEF75'] = acceleration_75
+    row['PEF_FEF75'] = acceleration_pef_75
+    row['TOTAL'] = acceleration_total
     return row
 
 
@@ -161,6 +178,8 @@ def preprocess_data(input_path, age, sex, smoke):
             processed_data['FEF25_FEF50'] = row['FEF25_FEF50'].values[0]
             processed_data['FEF50_FEF75'] = row['FEF50_FEF75'].values[0]
             processed_data['FEF75'] = row['FEF75'].values[0]
+            processed_data['PEF_FEF75'] = row['PEF_FEF75'].values[0]
+            processed_data['TOTAL'] = row['TOTAL'].values[0]
             processed_data['AGE'] = age
             processed_data['SEX'] = sex
             processed_data['smoke'] = smoke
@@ -187,7 +206,7 @@ def load_spiro_encoder(device_str, model_path):
         device=device,
         verbose=False
     ).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     return model
 
 
@@ -243,7 +262,9 @@ def run_spiro_explainer(model, data, threshold, spiro_encoder_original_result, a
 
 
 def run_spiro_predictor(model, data):
-    X_pred = [[data['PEF_FEF25'], data['FEF25_FEF50'], data['FEF50_FEF75'], data['FEF75'], data['copd_detection']]]
+    X_pred = [
+        [data['PEF_FEF25'], data['FEF25_FEF50'], data['FEF50_FEF75'], data['FEF75'], data['PEF_FEF75'], data['TOTAL'],
+         data['copd_detection']]]
     probabilities = model.predict_proba(X_pred)
     return probabilities
 
@@ -268,7 +289,7 @@ def plt_attention(input_x1, attention, fef25, fef50, fef75, fev1_value, fvc_valu
     x_pef75 = (x_pef_max + find_closest_x(fef75, y_data[x_pef_max:])) / 100.0
     x_pef_max = x_pef_max / 100.0
 
-    fig, ax = plt.subplots(figsize=(12, 4))
+    fig, ax = plt.subplots(figsize=(12, 8))
     ax.set_xlim(0, 15)
     ax.set_ylim(-0.05, 12)
     ax.spines['bottom'].set_position(('data', -0.05))

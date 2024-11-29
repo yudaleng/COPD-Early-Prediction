@@ -89,7 +89,7 @@ def parse_arguments(params=None):
         type=str,
         help='Device to use for prediction.',
         required=False,
-        default='cpu'
+        default='cuda'
     )
 
     return parser.parse_args()
@@ -110,11 +110,20 @@ def main(params=None):
         input_path=args.data, age=args.age, sex=args.sex, smoke=args.smoke
     )
 
+    print("Running the model. Please wait...")
+
+    device = torch.device(args.device_str if torch.cuda.is_available() and args.device_str == "cuda" else "cpu")
+    if device.type == "cuda":
+        device_name = torch.cuda.get_device_name(torch.cuda.current_device())
+        print(f"\n🚀Running model on GPU: {device_name}")
+    else:
+        print("\n⚙️ Running model on CPU")
+
     # Run SpiroEncoder
     spiro_encoder_original_result, attention_weights, all_input_x = run_spiro_encoder(
         model=load_spiro_encoder(device_str=args.device_str, model_path=args.spiro_encoder_path),
         data=processed_data,
-        device=torch.device(args.device_str if torch.cuda.is_available() else "cpu")
+        device=device
     )
 
     # Run SpiroExplainer
@@ -137,9 +146,18 @@ def main(params=None):
         )
         spiro_predictor_result = spiro_predictor[0][1:6]
 
-    print(f"COPD Detection: {spiro_explainer_result}")
-    if not spiro_explainer_result:
-        print(f"Future COPD Prediction: {spiro_predictor_result}")
+    if spiro_explainer_result:
+        print("\n=== COPD Detection Result ===")
+        print("✅ COPD Detected: Positive")
+    else:
+        print("\n=== COPD Detection Result ===")
+        print("❌ COPD Detected: Negative")
+        print("\n=== Future COPD Risk Prediction ===")
+        print(f"📅 1-Year Risk:   {spiro_predictor_result[0]:.2f}")
+        print(f"📅 2-Year Risk:   {spiro_predictor_result[1]:.2f}")
+        print(f"📅 3-Year Risk:   {spiro_predictor_result[2]:.2f}")
+        print(f"📅 4-Year Risk:   {spiro_predictor_result[3]:.2f}")
+        print(f"📅 5+ Year Risk:  {spiro_predictor_result[4]:.2f}")
 
     return spiro_explainer_result, spiro_predictor_result, image_base64
 
