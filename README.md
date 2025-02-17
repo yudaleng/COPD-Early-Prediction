@@ -1,6 +1,6 @@
 # Deep Learning for Detecting and Early Predicting Chronic Obstructive Pulmonary Disease from Spirogram Time Series
 ## Overview
-This repository contains the code accompanying the paper: "[Deep Learning for Detecting and Early Predicting Chronic Obstructive Pulmonary Disease from Spirogram Time Series](https://arxiv.org/abs/2405.03239)" by Mei, Shuhao, *et al*., 2024.
+This repository contains the code accompanying the paper: "[Deep Learning for Detecting and Early Predicting Chronic Obstructive Pulmonary Disease from Spirogram Time Series](https://doi.org/10.1038/s41540-025-00489-y)" by Mei, Shuhao, *et al*., 2025.
 
 
 ## Introduction
@@ -21,12 +21,16 @@ Highlights:
 
 If you use this code in your research, please consider citing our work:
 ```
-@article{mei2024deep,
-  title={Deep Learning for Detecting and Early Predicting Chronic Obstructive Pulmonary Disease from Spirogram Time Series: A UK Biobank Study},
-  author={Mei, Shuhao and Zhou, Yuxi and Xu, Jiahao and Wan, Yuxuan and Cao, Shan and Zhao, Qinghao and Geng, Shijia and Xie, Junqing and Hong, Shenda},
-  journal={arXiv preprint arXiv:2405.03239},
-  year={2024}
-}
+@article{mei2025deep,
+  title={Deep learning for detecting and early predicting chronic obstructive pulmonary disease from spirogram time series},
+  author={Mei, Shuhao and Li, Xin and Zhou, Yuxi and Xu, Jiahao and Zhang, Yong and Wan, Yuxuan and Cao, Shan and Zhao, Qinghao and Geng, Shijia and Xie, Junqing and Chen, Shengyong and Hong, Shenda},
+  journal={npj Systems Biology and Applications},
+  volume={11},
+  number={1},
+  pages={18},
+  year={2025},
+  publisher={Nature Publishing Group UK London}
+ }
 ```
 
 ## Installation
